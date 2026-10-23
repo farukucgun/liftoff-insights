@@ -1,0 +1,102 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Liftoff Insights</title>
+  <link rel="manifest" href="manifest.webmanifest">
+  <link rel="icon" href="icons/icon-192.png">
+  <meta name="theme-color" content="#2a78d6">
+  <link rel="stylesheet" href="css/style.css">
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.4.1/papaparse.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand"><span class="brand-full">Liftoff Insights</span><span class="brand-tab" id="brand-tab"></span></div>
+    <nav class="tabs" id="tabs">
+      <button data-tab="overview">Overview</button>
+      <button data-tab="program">Program</button>
+      <button data-tab="progress">Progress</button>
+      <button data-tab="muscles">Muscles</button>
+      <button data-tab="workouts">Workouts</button>
+      <button data-tab="gym">Gym</button>
+      <button data-tab="insights">Insights</button>
+      <button data-tab="export">Export</button>
+      <button data-tab="units">Units <span class="badge-dot" id="units-dot" hidden></span></button>
+    </nav>
+    <div class="topbar-right">
+      <button id="install-btn" class="btn" hidden>Install<span class="brand-full"> app</span></button>
+      <span id="save-status" class="small muted" role="status"></span>
+      <label class="seg" title="Display unit">
+        <select id="display-unit">
+          <option value="kg">kg</option>
+          <option value="lb">lb</option>
+        </select>
+      </label>
+      <label class="btn ghost file-btn">Load CSV<input type="file" class="file-input" accept=".csv,text/csv" hidden></label>
+    </div>
+  </header>
+
+  <div id="unit-warning" class="banner" hidden></div>
+  <div id="fix-warning" class="banner" hidden></div>
+
+  <main id="view"></main>
+
+  <div id="dropzone" class="dropzone" hidden>
+    <div class="dropzone-inner">
+      <h1>Drop your Liftoff export here</h1>
+      <p class="muted">or</p>
+      <label class="btn primary file-btn">Choose CSV file<input type="file" class="file-input" accept=".csv,text/csv" hidden></label>
+      <p class="muted small" id="dz-where">It’s saved on the server, so it shows on all your devices.</p>
+      <ol class="dz-steps muted small" id="dz-steps" hidden>
+        <li>In Liftoff, export your data and share the file to <strong>Liftoff Insights</strong> (install this page as an app first: Chrome menu → Add to Home screen). Or use the button above.</li>
+        <li>Open the <strong>Units</strong> tab and set kg or lb for each exercise. Liftoff’s export doesn’t say which.</li>
+        <li>To track bodyweight, write it as the workout name in Liftoff, e.g. <code>71.5</code>.</li>
+      </ol>
+      <p class="muted small" id="dz-restore" hidden>New phone? <label class="link-btn">Restore a backup<input type="file" id="dz-restore-input" accept=".json,application/json" hidden></label></p>
+      <p id="dz-msg" role="status"></p>
+    </div>
+  </div>
+
+  <div id="toast" class="toast" role="status" hidden></div>
+
+  <!-- Phone navigation (narrow screens only; the top tabs are used otherwise) -->
+  <nav class="bottom-nav" id="bottom-nav" aria-label="Pages">
+    <button data-tab="overview"><svg viewBox="0 0 24 24"><rect x="3" y="3" width="7" height="9" rx="1.5"/><rect x="14" y="3" width="7" height="5" rx="1.5"/><rect x="14" y="12" width="7" height="9" rx="1.5"/><rect x="3" y="16" width="7" height="5" rx="1.5"/></svg>Overview</button>
+    <button data-tab="program"><svg viewBox="0 0 24 24"><rect x="5" y="4" width="14" height="17" rx="2"/><path d="M9 4V3h6v1M9 10h6M9 14h6M9 18h3"/></svg>Program</button>
+    <button data-tab="progress"><svg viewBox="0 0 24 24"><path d="M3 17l6-6 4 4 8-8M15 7h6v6"/></svg>Progress</button>
+    <button data-tab="muscles"><svg viewBox="0 0 24 24"><path d="M2 12h3M19 12h3M6 8v8M18 8v8M9 6v12M15 6v12M9 12h6"/></svg>Muscles</button>
+    <button data-tab="workouts"><svg viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="16" rx="2"/><path d="M3 10h18M8 3v4M16 3v4"/></svg>Workouts</button>
+    <button id="nav-more" aria-haspopup="true" aria-expanded="false"><svg viewBox="0 0 24 24"><circle cx="5" cy="12" r="1.3"/><circle cx="12" cy="12" r="1.3"/><circle cx="19" cy="12" r="1.3"/></svg>More<span class="badge-dot" id="more-dot" hidden></span></button>
+  </nav>
+  <div class="more-sheet" id="more-sheet" hidden>
+    <button data-tab="gym">Gym</button>
+    <button data-tab="insights">Insights</button>
+    <button data-tab="export">Export</button>
+    <button data-tab="units">Units <span class="badge-dot" id="units-dot-2" hidden></span></button>
+  </div>
+
+  <div id="print-area"></div>
+
+  <script src="js/config.js"></script>
+  <script src="js/units.js"></script>
+  <script src="js/muscles.js"></script>
+  <script src="js/program.js"></script>
+  <script src="js/gym.js"></script>
+  <script src="js/data.js"></script>
+  <script src="js/charts.js"></script>
+  <script src="js/export.js"></script>
+  <script src="js/views/overview.js"></script>
+  <script src="js/views/progress.js"></script>
+  <script src="js/views/muscles.js"></script>
+  <script src="js/views/workouts.js"></script>
+  <script src="js/views/gym.js"></script>
+  <script src="js/views/insights.js"></script>
+  <script src="js/views/program.js"></script>
+  <script src="js/views/export.js"></script>
+  <script src="js/views/units.js"></script>
+  <script src="js/app.js"></script>
+</body>
+</html>
