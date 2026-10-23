@@ -300,11 +300,12 @@ async function init() {
   }
   if ("serviceWorker" in navigator && window.isSecureContext && location.protocol !== "file:") navigator.serviceWorker.register(LI.GUEST ? "sw.js?guest" : "sw.js").catch(() => {});
   // Chrome fires this only when the site can be installed as a real app (app drawer + share menu).
-  const installBtn = document.getElementById("install-btn");
+  // The start screen covers the top bar, so it has its own Install button.
+  const installBtns = [document.getElementById("install-btn"), document.getElementById("dz-install")];
   let installPrompt = null;
-  window.addEventListener("beforeinstallprompt", (e) => { e.preventDefault(); installPrompt = e; installBtn.hidden = false; });
-  window.addEventListener("appinstalled", () => { installBtn.hidden = true; installPrompt = null; });
-  installBtn.onclick = () => installPrompt && installPrompt.prompt();
+  window.addEventListener("beforeinstallprompt", (e) => { e.preventDefault(); installPrompt = e; installBtns.forEach((b) => (b.hidden = false)); });
+  window.addEventListener("appinstalled", () => { installBtns.forEach((b) => (b.hidden = true)); installPrompt = null; });
+  installBtns.forEach((b) => (b.onclick = () => installPrompt && installPrompt.prompt()));
   const sharedLocal = await takeLocalShare();
   const shared = sharedLocal ? null : sharedImportMessage();
 
