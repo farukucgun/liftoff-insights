@@ -1,6 +1,6 @@
 {
-  "name": "Liftoff Insights",
-  "short_name": "Liftoff",
+  "name": "Liftoff Insights (beta)",
+  "short_name": "Liftoff beta",
   "start_url": "./",
   "scope": "./",
   "display": "standalone",
