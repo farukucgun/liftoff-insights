@@ -14,6 +14,7 @@ LI.state = {
   muscleOverrides: LI.store.get("li.muscleOverrides", {}),
   corrections: LI.store.get("li.corrections", {}),
   unitSeen: LI.store.get("li.unitSeen", {}), // "Exercise|YYYY-MM-DD" -> weights when first seen with a unit set
+  unitHintOk: LI.store.get("li.unitHintOk", {}), // "Exercise|YYYY-MM-DD" -> true: the hint disagreed, but the unit set is right
   periods: { overview: "all", progress: "all", muscles: "28", ...LI.store.get("li.periods", {}) },
   rows: null,
   model: null,
@@ -38,10 +39,11 @@ LI.render = () => {
   banner.hidden = !unconfirmed || st.tab === "units";
   banner.innerHTML = `<strong>${unconfirmed} exercise${unconfirmed === 1 ? "" : "s"}</strong> still need a kg/lb unit confirmed. Until then they're treated as kg. <a href="#units">Set units →</a>`;
   // Settings that may no longer fit the data after a session was edited in Liftoff.
-  const fixes = st.model.fixIssues.length, units = st.model.unitIssues.length;
+  const fixes = st.model.fixIssues.length, units = st.model.unitIssues.length, hints = st.model.unitHints.length;
   const checks = [
     fixes && st.tab !== "workouts" && `<strong>${fixes} of your set fix${fixes === 1 ? "" : "es"}</strong> may no longer be on the right set. <a href="#workouts">Check →</a>`,
     units && st.tab !== "units" && `<strong>${units} session${units === 1 ? "" : "s"}</strong> had their weights changed in Liftoff, so the unit set for ${units === 1 ? "it" : "them"} may be wrong. <a href="#units">Check →</a>`,
+    hints && st.tab !== "units" && `<strong>${hints} session${hints === 1 ? "" : "s"}</strong> look${hints === 1 ? "s" : ""} logged in a different unit than the one set (${LI.esc(st.model.unitHints.map((h) => h.exercise).filter((x, i, a) => a.indexOf(x) === i).join(", "))}). <a href="#units">Check →</a>`,
   ].filter(Boolean);
   const fixBanner = document.getElementById("fix-warning");
   fixBanner.hidden = !checks.length;
@@ -86,8 +88,8 @@ LI.setPeriod = (page, key) => {
 // mirrored to settings.json when the page is served by serve.py. localStorage stays
 // as a cache and as the only store when opened another way.
 
-LI.SETTINGS_KEYS = { units: "li.unitOverrides", corrections: "li.corrections", muscleOverrides: "li.muscleOverrides", target: "li.target", muscleTargets: "li.muscleTargets", program: "li.program", unitSeen: "li.unitSeen" };
-const STATE_FOR = { units: "unitOverrides", corrections: "corrections", muscleOverrides: "muscleOverrides", target: "target", muscleTargets: "muscleTargets", program: "program", unitSeen: "unitSeen" };
+LI.SETTINGS_KEYS = { units: "li.unitOverrides", corrections: "li.corrections", muscleOverrides: "li.muscleOverrides", target: "li.target", muscleTargets: "li.muscleTargets", program: "li.program", unitSeen: "li.unitSeen", unitHintOk: "li.unitHintOk" };
+const STATE_FOR = { units: "unitOverrides", corrections: "corrections", muscleOverrides: "muscleOverrides", target: "target", muscleTargets: "muscleTargets", program: "program", unitSeen: "unitSeen", unitHintOk: "unitHintOk" };
 LI.settingsMode = "browser"; // "file" once serve.py answers
 
 const setSaveStatus = (text, cls = "muted", title = "") => {
@@ -214,7 +216,7 @@ LI.loadText = (text, { persist = true, source } = {}) => {
 function setTab(tab) {
   LI.state.tab = TABS.includes(tab) ? tab : "overview";
   // A "← Back to …" link only makes sense right after following a link into Progress.
-  if (LI.state.tab !== "progress") Object.assign(LI.state, { progressFromMuscle: null, progressBackTo: null });
+  if (LI.state.tab !== "progress") Object.assign(LI.state, { progressFromMuscle: null, progressFromWorkout: null, progressBackTo: null });
   LI.render();
 }
 

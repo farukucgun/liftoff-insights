@@ -110,6 +110,11 @@ select, input[type="date"], input[type="text"] {
   font: inherit; color: var(--text); background: var(--surface); border: 1px solid var(--border);
   border-radius: 8px; padding: 6px 8px;
 }
+/* Our own arrow, with room for it, so the text never runs into it (the muted gray reads in both themes). */
+select {
+  -webkit-appearance: none; appearance: none; padding-right: 26px;
+  background: var(--surface) url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6' viewBox='0 0 10 6'%3E%3Cpath d='M1 1l4 4 4-4' fill='none' stroke='%23898781' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E") no-repeat right 9px center;
+}
 .btn {
   font: inherit; border: 1px solid var(--border); background: var(--surface-2); color: var(--text);
   border-radius: 8px; padding: 6px 12px; cursor: pointer; white-space: nowrap;
@@ -177,6 +182,8 @@ td.r, th.r { text-align: right; font-variant-numeric: tabular-nums; }
 .cal .cal-cell { width: auto; height: auto; border-radius: 5px; display: flex; align-items: center; justify-content: center; font-size: 12px; font-variant-numeric: tabular-nums; color: var(--muted); }
 .cal .cal-cell.on { color: var(--text); }
 .cal .cal-cell.strong { color: var(--surface); }
+button.cal-cell { border: 0; padding: 0; font-family: inherit; cursor: pointer; }
+button.cal-cell:hover { outline: 1.5px solid var(--accent); outline-offset: -1.5px; }
 .cal .cal-cell.today { outline: 1.5px solid var(--text); outline-offset: -1.5px; }
 .cal-cell { width: 14px; height: 14px; border-radius: 3px; background: var(--seq-0); }
 .cal-cell.empty { background: transparent; }
@@ -307,6 +314,17 @@ button.p-wd:hover { border-color: var(--axis); }
 .wk-item.active { background: var(--surface-2); outline: 1px solid var(--axis); }
 .wk-ex { margin-top: 16px; }
 .wk-ex h3 { color: var(--text); display: flex; gap: 8px; align-items: baseline; flex-wrap: wrap; }
+.ex-link { color: inherit; text-decoration: underline dotted var(--muted); text-underline-offset: 3px; }
+.ex-link:hover { color: var(--accent); text-decoration: underline; }
+.wk-ex h3 .btn { margin-left: auto; font-weight: 400; }
+.add-weight { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin: 0 0 8px; padding: 10px; background: var(--surface-2); border-radius: 8px; }
+.add-weight input { width: 140px; }
+.metric-chips { display: flex; flex-wrap: wrap; gap: 6px; margin: -4px 0 10px; }
+.metric-chips .btn.on { background: var(--accent); color: #fff; border-color: transparent; }
+.records { display: grid; gap: 12px 16px; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); }
+.record .label { color: var(--text-2); font-size: 12px; }
+.record .value { font-size: 22px; font-weight: 650; margin-top: 2px; }
+.record .sub { color: var(--muted); font-size: 12px; }
 
 .edited { font-size: 11px; color: var(--accent); font-weight: 600; }
 .edit-row td { background: var(--surface-2); }
@@ -354,14 +372,17 @@ tr.row-link:hover a { text-decoration: underline; }
 .ov-top.with-gym { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 16px; }
 .ov-top.with-gym > .card:last-child { order: -1; } /* calendar on the left on wide screens */
 .gym-card { display: flex; flex-direction: column; color: inherit; text-decoration: none; cursor: pointer; }
-.gym-row { display: flex; align-items: baseline; gap: 8px; flex-wrap: wrap; }
-.gym-row .num { font-size: 36px; font-weight: 750; line-height: 1; margin-right: -2px; }
-.gym-row .pill, .gym-nocmp { margin-left: 8px; align-self: center; }
+.gym-row { display: flex; align-items: baseline; gap: 8px 18px; flex-wrap: wrap; }
+.gym-stat { display: inline-flex; align-items: baseline; gap: 6px; }
+.gym-row .num { font-size: 36px; font-weight: 750; line-height: 1; }
+.gym-stat.raw .num { font-size: 22px; font-weight: 600; color: var(--text-2); }
+.gym-row .pill { align-self: center; }
 .gym-card .gym-spark { flex: 1; min-height: 170px; height: auto; margin-top: 12px; position: relative; }
 .gym-foot { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; margin-top: 8px; }
 .gym-key { display: inline-flex; align-items: center; gap: 6px; }
 .gym-key i { display: inline-block; width: 16px; height: 0; border-top: 2.5px solid var(--series-1); }
 .gym-key i.k-usual { border-top: 1.5px dashed var(--muted); }
+.gym-key i.k-raw { border-top: 1.5px solid var(--axis); }
 .gym-key i.k-band { height: 10px; border: 0; border-radius: 2px; background: color-mix(in srgb, var(--series-1) 15%, transparent); }
 .gym-upd { margin-left: auto; }
 .gym-card:hover { border-color: var(--axis); }
@@ -427,7 +448,7 @@ tr.row-link:hover a { text-decoration: underline; }
   /* Workouts: a picker instead of the list, so the workout gets the screen. */
   .wk-list { display: none; }
   .wk-picker.mob-only { display: flex !important; gap: 8px; align-items: stretch; }
-  .wk-picker select { flex: 1; min-width: 0; font-size: 15px; font-weight: 600; padding: 8px 10px; }
+  .wk-picker select { flex: 1; min-width: 0; font-size: 15px; font-weight: 600; padding: 8px 28px 8px 10px; }
   .wk-picker .btn { font-size: 20px; line-height: 1; padding: 0 14px; }
   .wk-picker .btn:disabled { opacity: .35; }
   .wk-layout { gap: 10px; }
@@ -439,6 +460,7 @@ tr.row-link:hover a { text-decoration: underline; }
   .topbar { flex-wrap: nowrap; gap: 8px; padding: 8px 12px; }
   .topbar-right { margin-left: auto; gap: 6px; }
   .topbar-right .btn, .topbar-right select { padding: 5px 8px; font-size: 13px; }
+  .topbar-right select { padding-right: 24px; background-position: right 7px center; }
   #save-status { font-size: 0; }
   #save-status::before { content: attr(data-short); font-size: 16px; }
   .edit-row td { padding: 6px 4px; }
@@ -495,6 +517,12 @@ tr.row-link:hover a { text-decoration: underline; }
   table.stack td[data-label]:not(:first-child)::before { content: attr(data-label); display: block; font-size: 11px; color: var(--muted); margin-bottom: 1px; }
   table.stack td:empty { display: none; }
   table.stack select { max-width: 100%; }
+  /* Units: hint, unit and weights on one line under their labels, the select no taller than text. */
+  .unit-sessions table.stack select { width: 100%; font-size: 13px; line-height: 18px; padding: 1px 22px 1px 6px; margin: -2px 0; background-position: right 7px center; }
+  .unit-row .name { min-width: 0; flex-basis: 100%; }
+  .unit-row summary .u-default { margin-left: auto; }
+  .records { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .record .value { font-size: 19px; }
   .table-wrap:has(> table.stack) { overflow-x: visible; }
 }
 

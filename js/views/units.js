@@ -54,6 +54,28 @@ function unitIssuesCard(model) {
   </div>`;
 }
 
+// Sessions read as lb whose weights look typed in kg (see unitHints in data.js).
+function unitHintsCard(model) {
+  if (!model.unitHints.length) return "";
+  const rows = model.unitHints.map((h) => `<tr>
+      <td>${LI.esc(h.exercise)} · ${LI.fmtDate(new Date(`${h.day}T12:00`))} <span class="muted small">set as lb</span></td>
+      <td class="num">${h.sets.map((x) => `${x.rawWeight}~`).join(", ")}</td>
+      <td class="small wide">Every weight has the rounding noise of numbers typed in kg. Did you switch this exercise to kg in Liftoff?</td>
+      <td class="r wide" style="white-space:nowrap">
+        <button class="btn small primary" data-hint-from="${LI.esc(h.key)}" title="Earlier lb sessions stay lb">kg from this session on</button>
+        <button class="btn small" data-hint-one="${LI.esc(h.key)}">Only this session</button>
+        <button class="btn small" data-hint-ok="${LI.esc(h.key)}">It's lb</button>
+      </td>
+    </tr>`).join("");
+  return `<div class="card" style="margin-bottom:16px">
+    <div class="card-head"><h2>${model.unitHints.length} session${model.unitHints.length === 1 ? "" : "s"} that look${model.unitHints.length === 1 ? "s" : ""} like kg</h2><span class="muted small">read as lb until you choose</span></div>
+    <div class="table-wrap"><table class="stack">
+      <thead><tr><th>Session</th><th>Weights as exported</th><th>Why</th><th></th></tr></thead>
+      <tbody>${rows}</tbody>
+    </table></div>
+  </div>`;
+}
+
 LI.views.units = (el, model) => {
   const st = LI.state;
   st.unitsToggled = st.unitsToggled || {}; // exercise -> open, when the row was opened or closed by hand
@@ -65,6 +87,7 @@ LI.views.units = (el, model) => {
       .map(([v, l]) => `<option value="${v}" ${v === value ? "selected" : ""}>${l}</option>`).join("");
 
   el.innerHTML = `
+    ${unitHintsCard(model)}
     ${unitIssuesCard(model)}
     <div class="card">
       <div class="card-head">
@@ -161,6 +184,33 @@ LI.views.units = (el, model) => {
     LI.store.set("li.corrections", st.corrections);
     st.unitSeen[issue.key] = issue.now;
     LI.store.set("li.unitSeen", st.unitSeen);
+    LI.rebuild();
+  }));
+
+  const hintFor = (b, attr) => model.unitHints.find((h) => h.key === b.getAttribute(attr));
+  el.querySelectorAll("[data-hint-from]").forEach((b) => (b.onclick = () => {
+    // Switch the default to kg, keeping every earlier session that was read as lb at lb.
+    const h = hintFor(b, "data-hint-from");
+    const entry = unitEntry(h.exercise);
+    for (const s of model.exercises.get(h.exercise).sessions) {
+      const day = s.workout.day;
+      if (day < h.day && LI.resolveUnit(h.exercise, day) === "lb") entry.sessions[day] = "lb";
+    }
+    entry.default = "kg";
+    delete entry.sessions[h.day];
+    saveEntry(h.exercise, entry);
+    LI.rebuild();
+  }));
+  el.querySelectorAll("[data-hint-one]").forEach((b) => (b.onclick = () => {
+    const h = hintFor(b, "data-hint-one");
+    const entry = unitEntry(h.exercise);
+    entry.sessions[h.day] = "kg";
+    saveEntry(h.exercise, entry);
+    LI.rebuild();
+  }));
+  el.querySelectorAll("[data-hint-ok]").forEach((b) => (b.onclick = () => {
+    st.unitHintOk = { ...st.unitHintOk, [b.dataset.hintOk]: true };
+    LI.store.set("li.unitHintOk", st.unitHintOk);
     LI.rebuild();
   }));
 

@@ -94,7 +94,7 @@ function renderDetail(el, model, w) {
     <div class="card-head">
       <div>
         <h2 class="desk-only">${LI.fmtDate(w.date, { weekday: "long", day: "numeric", month: "long", year: "numeric" })}</h2>
-        <div class="muted">${LI.programStart() && w.date >= LI.programStart() ? `${LI.classifyWorkout(w)?.day.name || "Off plan"} · ` : ""}${LI.esc(LI.workoutMeta(w))}${(() => { const g = LI.gymAt(LI.fromGymClock(w.date)); return g ? ` · ~${g.count} people at the gym` : ""; })()}${prCount ? ` · <span class="pr">★ ${prCount} PR${prCount > 1 ? "s" : ""}</span>` : ""}</div>
+        <div class="muted">${LI.programStart() && w.date >= LI.programStart() ? `${LI.classifyWorkout(w)?.day.name || "Off plan"} · ` : ""}${LI.esc(LI.workoutMeta(w))}${(() => { const g = LI.gymAt(LI.fromGymClock(w.date)); return g ? ` · ~${g.adj} people at the gym` : ""; })()}${prCount ? ` · <span class="pr">★ ${prCount} PR${prCount > 1 ? "s" : ""}</span>` : ""}</div>
       </div>
       <div class="toolbar desk-only" style="margin:0">${LI.exportButtons()}</div>
       <details class="wk-export mob-only"><summary class="btn small">Export</summary><div class="toolbar" style="margin:8px 0 0">${LI.exportButtons()}</div></details>
@@ -102,11 +102,15 @@ function renderDetail(el, model, w) {
     ${w.exercises.map((e) => {
       const { cur, prev } = sessionFor(model, e.name, w);
       const isBW = (LI.exerciseInfo(e.name).bw || 0) > 0;
+      // Liftoff's export drops added weight on these, so offer to type it in for all sets at once.
+      const canAdd = "bw" in LI.exerciseInfo(e.name) && e.sets.every((x) => x.rawWeight === 0);
       const extra = ["distance", "seconds", "rpe", "notes"].filter((k) => e.sets.some((s) => (k === "rpe" ? s.rpe != null : k === "notes" ? s.notes : s[k] > 0)));
       return `
       <div class="wk-ex">
-        <h3>${LI.esc(e.name)} ${cur.prs.length ? `<span class="pr">★ PR ${cur.prs.join(", ")}</span>` : ""}
-          <span class="muted small" style="font-weight:400">${LI.exerciseInfo(e.name).primary.join(", ")}</span></h3>
+        <h3><a href="#progress" class="ex-link" data-progress="${LI.esc(e.name)}" title="Progress for ${LI.esc(e.name)}">${LI.esc(e.name)}</a> ${cur.prs.length ? `<span class="pr">★ PR ${cur.prs.join(", ")}</span>` : ""}
+          <span class="muted small" style="font-weight:400">${LI.exerciseInfo(e.name).primary.join(", ")}</span>
+          ${canAdd ? `<button class="btn small ghost" data-add-weight="${LI.esc(e.name)}">${e.sets.some((x) => x.kg > 0) ? "Change weight" : "Add weight"}</button>` : ""}</h3>
+        ${LI.state.addingWeight === `${w.id}|${e.name}` ? addWeightForm(model, w, e, isBW) : ""}
         <div class="table-wrap"><table>
           <thead><tr><th>Set</th><th class="r">${isBW ? `Added (${u})` : `Weight (${u})`}</th><th class="r">Reps</th>
             ${extra.map((k) => `<th${k === "notes" ? "" : ' class="r"'}>${{ distance: "Distance", seconds: "Time", rpe: "RPE", notes: "Notes" }[k]}</th>`).join("")}
@@ -135,6 +139,25 @@ function renderDetail(el, model, w) {
   el.querySelectorAll("[data-export]").forEach((b) => (b.onclick = () => LI.exportAs(b.dataset.export, [w], `liftoff-workout-${w.day}`)));
 
   const st = LI.state;
+  el.querySelectorAll("[data-progress]").forEach((a) => (a.onclick = (ev) => {
+    ev.preventDefault();
+    // Keep Progress's period unless it doesn't reach back to this workout; then widen it just enough.
+    const range = LI.periodRange(model, st.periods.progress);
+    if (w.date < range.from) {
+      const fits = LI.PERIODS.find(([k]) => k === "all" || LI.periodRange(model, k).from <= w.date);
+      LI.state.periods.progress = fits[0];
+      LI.store.set("li.periods", LI.state.periods);
+    }
+    Object.assign(st, { progressMode: "exercise", progressExercise: a.dataset.progress, progressFromMuscle: null, progressFromWorkout: w.id, progressBackTo: "workouts" });
+    location.hash = "progress";
+  }));
+  el.querySelectorAll("[data-add-weight]").forEach((b) => (b.onclick = () => {
+    const k = `${w.id}|${b.dataset.addWeight}`;
+    st.addingWeight = st.addingWeight === k ? null : k;
+    LI.render();
+  }));
+  const addForm = el.querySelector(".add-weight");
+  if (addForm) bindAddWeight(addForm, model, w);
   el.querySelectorAll("[data-edit]").forEach((b) => (b.onclick = () => { st.editingSet = b.dataset.edit; LI.render(); }));
   const form = el.querySelector(".edit-row");
   if (!form) return;
@@ -157,6 +180,59 @@ function renderDetail(el, model, w) {
   const revert = form.querySelector("[data-act=revert]");
   if (revert) revert.onclick = () => { LI.setCorrection(st.editingSet, null); st.editingSet = null; LI.rebuild(); };
   form.querySelectorAll("input").forEach((i) => (i.onkeydown = (e) => { if (e.key === "Enter") save(); if (e.key === "Escape") cancel(); }));
+}
+
+// Added weight for every set of an exercise in one go, written the way you'd note it in Liftoff:
+// "20, 20, 20" per set, or "20" for all. Saved as set fixes (the same as ✎ on each set).
+const fmtList = (kgs) => kgs.map((kg) => LI.fmtNum(LI.toDisplay(kg), 2)).join(", ");
+
+function lastAdded(model, name, w) {
+  const ss = model.exercises.get(name).sessions;
+  for (let i = ss.findIndex((s) => s.workout === w) - 1; i >= 0; i--) {
+    if (ss[i].sets.some((x) => x.kg > 0)) return ss[i];
+  }
+  return null;
+}
+
+function addWeightForm(model, w, e, isBW) {
+  const u = LI.state.displayUnit;
+  const now = e.sets.some((x) => x.kg > 0) ? fmtList(e.sets.map((x) => x.kg)) : "";
+  const last = lastAdded(model, e.name, w);
+  const lastList = last ? fmtList(e.sets.map((_, i) => last.sets[Math.min(i, last.sets.length - 1)].kg)) : "";
+  return `<div class="add-weight" data-name="${LI.esc(e.name)}">
+    <input name="weights" type="text" inputmode="decimal" value="${now || lastList}" placeholder="${e.sets.map(() => "20").join(", ")}" aria-label="${isBW ? "Added weight" : "Weight"} per set in ${u}">
+    <button class="btn small primary" data-act="save">Save</button>
+    <button class="btn small" data-act="cancel">Cancel</button>
+    <span class="muted small">${isBW ? "Added weight" : "Weight"} in ${u}, one per set (${e.sets.length}) or one for all.${last ? ` Last time (${LI.fmtShort(last.date)}): ${fmtList(last.sets.map((x) => x.kg))}.` : ""}</span>
+    <span class="edit-err down small"></span>
+  </div>`;
+}
+
+function bindAddWeight(form, model, w) {
+  const st = LI.state;
+  const ex = w.exercises.find((x) => x.name === form.dataset.name);
+  const input = form.querySelector("input");
+  input.focus();
+  input.select();
+  const save = () => {
+    const vals = input.value.split(/[,;\s]+/).filter(Boolean).map((v) => parseFloat(v.replace(/^\+/, "")));
+    const ok = vals.length && vals.every((v) => !isNaN(v) && v >= 0) && (vals.length === 1 || vals.length === ex.sets.length);
+    if (!ok) { form.querySelector(".edit-err").textContent = `Enter one number, or ${ex.sets.length} separated by commas.`; return; }
+    ex.sets.forEach((set, i) => {
+      const shown = vals.length === 1 ? vals[0] : vals[i];
+      const kg = st.displayUnit === "lb" ? shown * LI.LB : shown;
+      const old = st.corrections[set.key];
+      // Weight 0 with the reps as exported needs no fix at all.
+      if (kg === 0 && (!old || old.reps == null || old.reps === set.rawReps)) LI.setCorrection(set.key, null);
+      else LI.setCorrection(set.key, { kg, reps: set.reps, was: { weight: set.rawWeight, reps: set.rawReps } });
+    });
+    st.addingWeight = null;
+    LI.rebuild();
+  };
+  const cancel = () => { st.addingWeight = null; LI.render(); };
+  form.querySelector("[data-act=save]").onclick = save;
+  form.querySelector("[data-act=cancel]").onclick = cancel;
+  input.onkeydown = (e) => { if (e.key === "Enter") save(); if (e.key === "Escape") cancel(); };
 }
 
 function editRow(s, i, extraCols, isBW) {

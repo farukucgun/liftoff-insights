@@ -11,15 +11,14 @@ LI.gymNowParts = (now) => {
   return { cls, label, trend, age };
 };
 
-// The count with how it compares to a usual day at this time, on one line. With no past
-// reading for this weekday and half hour, the first comparison is the same time next week.
+// Two numbers: people actually in the gym (adjusted, see LI.gymAdjust) and the gym's own
+// checked-in count. Once this weekday and half hour has been seen before, how it compares too.
 LI.gymCountRow = (now) => {
   const { cls, label } = LI.gymNowParts(now);
-  const next = LI.gymDayAfter(now.day, 7);
   return `<div class="gym-row">
-    <span class="num">${now.count}</span><span class="muted">people</span>
-    ${now.vs ? `<span class="pill ${cls}">${label}</span><span class="muted small">usually ~${now.vs.typical}</span>`
-      : `<span class="muted small gym-nocmp">No comparison until ${LI.fmtGymDay(next)}</span>`}
+    <span class="gym-stat"><span class="num">${now.adj}</span><span class="muted">in the gym</span></span>
+    <span class="gym-stat raw" title="The gym's own count. It includes people who left without checking out, until they're cleared at night."><span class="num">${now.count}</span><span class="muted">checked in</span></span>
+    ${now.vs ? `<span class="pill ${cls}">${label}</span><span class="muted small">usually ~${now.vs.typical}</span>` : ""}
   </div>`;
 };
 
@@ -33,10 +32,12 @@ LI.gymUpdated = (now) => {
   return `${now.stale ? "⚠ " : ""}Updated ${LI.fmtClock(now.minute)} (${age})${trend}`;
 };
 
-// Key for the 24-hour chart; shaded only where there's room to explain it.
-LI.gymKey = ({ band = false } = {}) => `<span class="gym-key"><i class="k-line"></i>Last 24 h</span>
-  <span class="gym-key"><i class="k-usual"></i>Usual</span>
-  ${band ? `<span class="gym-key"><i class="k-band"></i>Middle half of past days</span>` : ""}`;
+// Key for the 24-hour chart, named as in its tooltips. "Usual" only once there is one; its
+// shaded range only where there's room to explain it.
+LI.gymKey = ({ usual = false, band = false } = {}) => `<span class="gym-key"><i class="k-line"></i>In the gym</span>
+  <span class="gym-key"><i class="k-raw"></i>Checked in</span>
+  ${usual ? `<span class="gym-key"><i class="k-usual"></i>Usual</span>` : ""}
+  ${usual && band ? `<span class="gym-key" title="Half of past days at this weekday and time were inside the shaded range"><i class="k-band"></i>Usual range</span>` : ""}`;
 
 // The heatmap covers the hours you'd be at the gym.
 const openRange = () => LI.GYM_HOURS;
@@ -64,10 +65,12 @@ LI.gymDayChart = (canvas, now) => {
     { label: "Usual range", points: slots.map((s) => ({ x: s.x, y: s.q3 })), color: "transparent", pointRadius: 0, width: 0, fill: "-1", fillColor: band, noTooltip: true },
     { label: "Usual", points: slots.map((s) => ({ x: s.x, y: Math.round(s.median) })), color: LI.css("--muted"), pointRadius: 0, width: 1.5, dashed: true },
   ] : [];
-  series.push({ label: "People", points: recent.map((r) => ({ x: x(r), y: r.count })), color: LI.seriesColor(0), pointRadius: 0, width: 2.5, tension: 0.3 });
+  series.push({ label: "Checked in", points: recent.map((r) => ({ x: x(r), y: r.count })), color: LI.css("--axis"), pointRadius: 0, width: 1.5, tension: 0.3 });
+  series.push({ label: "In the gym", points: recent.map((r) => ({ x: x(r), y: r.adj })), color: LI.seriesColor(0), pointRadius: 0, width: 2.5, tension: 0.3 });
   const chart = LI.lineChart(canvas, series, { xMin: from, xMax: to, xStep: 120, xFmt: (v) => LI.fmtClock(Math.round(v)), fmt: (v) => `${Math.round(v)} people` });
   chart.options.plugins.legend.display = false;
   chart.update();
+  chart.$usual = slots.length > 0; // for LI.gymKey
   return chart;
 };
 
@@ -90,7 +93,7 @@ LI.views.gym = (el, model) => {
   for (const r of LI.gym.readings) {
     const k = `${r.dow}|${Math.floor(r.minute / 60)}`;
     if (!cells.has(k)) cells.set(k, { counts: [], days: new Set() });
-    cells.get(k).counts.push(r.count);
+    cells.get(k).counts.push(r.adj);
     cells.get(k).days.add(r.day);
   }
   const med = (a) => { const s = [...a].sort((x, y) => x - y); return s[Math.floor((s.length - 1) / 2)]; };
@@ -129,7 +132,8 @@ LI.views.gym = (el, model) => {
     <div class="card" style="margin-top:16px">
       <div class="card-head"><h2>${now.ageMin < 120 ? "Last 24 hours" : `24 hours to ${LI.fmtDate(now.t, { weekday: "short", day: "numeric", month: "short", timeZone: LI.GYM_TZ })} ${LI.fmtClock(now.minute)}`}</h2></div>
       <div class="chart-box tall"><canvas id="g-day"></canvas></div>
-      <div class="gym-foot muted small">${LI.gymKey({ band: true })}</div>
+      <div class="gym-foot muted small" id="g-key"></div>
+      <p class="muted small" id="g-usual" hidden style="margin:6px 0 0">Usual: the middle value of past days at that weekday and time. Half of those days fall inside the shaded range.</p>
     </div>
     <div class="card" style="margin-top:16px">
       <div class="card-head"><h2>Usual week</h2><span class="muted small">median people per hour · outlined = now</span></div>
@@ -140,22 +144,25 @@ LI.views.gym = (el, model) => {
     ${resetNote()}
     <p class="muted small" style="margin-top:12px">Usual week shows ${LI.fmtClock(from)}–${LI.fmtClock(to % 1440)}. Readings every 10 minutes from your gym-occupancy collector: ${cov.days} day${cov.days === 1 ? "" : "s"} so far (since ${LI.fmtShort(cov.from)}). “Usual” needs a few weeks of data to settle, so treat early numbers as rough.</p>`;
 
-  LI.gymDayChart(el.querySelector("#g-day"), now);
+  const day = LI.gymDayChart(el.querySelector("#g-day"), now);
+  el.querySelector("#g-key").innerHTML = LI.gymKey({ usual: day.$usual, band: true });
+  if (day.$usual) el.querySelector("#g-usual").hidden = false;
   el.querySelectorAll("[data-cell]").forEach((b) => (b.onclick = () => {
     st.gymCell = st.gymCell === b.dataset.cell ? null : b.dataset.cell;
     LI.render();
   }));
 };
 
-// Explains the nightly clear-out, with last night's numbers, so late counts aren't read literally.
+// Explains the adjustment, with last night's numbers, so the two counts make sense.
 function resetNote() {
   const resets = LI.gymResets();
   if (!resets.length) return "";
   const last = resets[0];
   const range = resets.length > 1 ? ` (${Math.min(...resets.map((r) => r.cleared))}–${Math.max(...resets.map((r) => r.cleared))} on the ${resets.length} nights so far)` : "";
   return `<div class="card" style="margin-top:16px">
-    <div class="card-head"><h2>Late-evening counts run high</h2></div>
-    <p class="small" style="margin:0">The gym's system counts people who checked in and haven't checked out. Anyone who leaves without checking out stays counted until it clears everyone at ${LI.fmtClock(last.minute - (last.minute % 10))} (midnight UTC): last night that was <strong>${last.cleared} people</strong>${range}. So the later in the evening, the more the count overstates who's actually there, by up to about that many near midnight.</p>
+    <div class="card-head"><h2>How the count is adjusted</h2></div>
+    <p class="small" style="margin:0 0 8px">The gym counts everyone who checked in and hasn't checked out. People who leave without checking out stay counted until the system clears everyone at ${LI.fmtClock(last.minute - (last.minute % 10))} (midnight UTC): last night that was <strong>${last.cleared} people</strong>${range}.</p>
+    <p class="small" style="margin:0">They pile up through the day, so the app takes off a share of that night's clear-out: as much of it as a usual day's visits are over by then. Early in the day that's almost nothing; by late evening it's nearly all of it. Today's clear-out isn't known until tonight, so it's estimated from the same weekday last week and recent nights. Charts and the usual week use the adjusted numbers. It's rough until there are a few weeks of nights to learn from.</p>
   </div>`;
 }
 

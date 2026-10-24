@@ -35,29 +35,40 @@ LI.views.progress = (el, model) => {
       ${LI.periodSelect("p-period", range.key)}
       <span class="muted small">${LI.fmtShort(range.from)} – ${LI.fmtShort(range.to)}</span>
     </div>
+    ${st.progressBackTo === "program" ? `<p style="margin:-8px 0 12px"><a href="#program" id="p-back-program">← Back to Program</a></p>` : ""}
     <div id="p-body"></div>`;
 
+  const backProgram = el.querySelector("#p-back-program");
+  if (backProgram) backProgram.onclick = () => Object.assign(st, { progressBackTo: null });
   const pick = el.querySelector("#p-pick");
   const body = el.querySelector("#p-body");
-  el.querySelector("#p-mode").onchange = (e) => { st.progressMode = e.target.value; st.progressFromMuscle = null; st.progressBackTo = null; LI.render(); };
+  el.querySelector("#p-mode").onchange = (e) => { Object.assign(st, { progressMode: e.target.value, progressFromMuscle: null, progressFromWorkout: null, progressBackTo: null }); LI.render(); };
   el.querySelector("#p-period").onchange = (e) => LI.setPeriod("progress", e.target.value);
 
   if (st.progressMode === "exercise") {
-    pick.innerHTML = exList.map((x) => `<option ${x.name === st.progressExercise ? "selected" : ""}>${LI.esc(x.name)}</option>`).join("");
-    pick.onchange = (e) => { st.progressExercise = e.target.value; st.progressFromMuscle = null; st.progressBackTo = null; LI.render(); };
+    // Grouped by main muscle, in the body order the muscle list uses (so chest sits near
+    // shoulders, back near biceps...), A–Z inside a group. New exercises land in their group
+    // from their mapping (or name guess); unmapped ones go last.
+    const groups = new Map([...LI.MUSCLES, "Other"].map((m) => [m, []]));
+    for (const x of exList) groups.get(x.info.primary.find((m) => groups.has(m)) || "Other").push(x);
+    pick.innerHTML = [...groups].filter(([, xs]) => xs.length).map(([m, xs]) => `<optgroup label="${m}">${xs
+      .sort((a, b) => a.name.localeCompare(b.name))
+      .map((x) => `<option ${x.name === st.progressExercise ? "selected" : ""}>${LI.esc(x.name)}</option>`).join("")}</optgroup>`).join("");
+    pick.onchange = (e) => { Object.assign(st, { progressExercise: e.target.value, progressFromMuscle: null, progressFromWorkout: null, progressBackTo: null }); LI.render(); };
     renderExercise(body, model, model.exercises.get(st.progressExercise), range);
     const back = body.querySelector("#p-back");
     if (back) back.onclick = (e) => {
       e.preventDefault();
       const backTo = st.progressBackTo;
-      Object.assign(st, { progressFromMuscle: null, progressBackTo: null });
+      Object.assign(st, { progressFromMuscle: null, progressFromWorkout: null, progressBackTo: null });
+      if (backTo === "workouts") return (location.hash = "workouts"); // workoutId is still set there
       if (backTo === "muscles") return (location.hash = "muscles"); // selectedMuscle is still set there
       Object.assign(st, { progressMode: "muscle", progressMuscle: back.dataset.muscleBack });
       LI.render();
     };
   } else {
     pick.innerHTML = LI.MUSCLES.map((m) => `<option ${m === st.progressMuscle ? "selected" : ""}>${m}</option>`).join("");
-    pick.onchange = (e) => { st.progressMuscle = e.target.value; LI.render(); };
+    pick.onchange = (e) => { Object.assign(st, { progressMuscle: e.target.value, progressBackTo: null }); LI.render(); };
     renderMuscle(body, model, st.progressMuscle, range);
   }
 };
@@ -74,9 +85,11 @@ function renderExercise(el, model, ex, range) {
   const info = ex.info;
   const lastDone = ex.sessions[ex.sessions.length - 1].date;
 
-  const from = LI.state.progressFromMuscle;
+  const from = LI.state.progressFromMuscle, backTo = LI.state.progressBackTo;
+  const fromWorkout = backTo === "workouts" && model.workouts.find((w) => w.id === LI.state.progressFromWorkout);
   const header = `
-    ${from ? `<p style="margin:-8px 0 12px"><a href="#${LI.state.progressBackTo === "muscles" ? "muscles" : "progress"}" id="p-back" data-muscle-back="${from}">← Back to ${LI.state.progressBackTo === "muscles" ? `Muscles (${from})` : from}</a></p>` : ""}
+    ${fromWorkout ? `<p style="margin:-8px 0 12px"><a href="#workouts" id="p-back">← Back to workout (${LI.fmtDate(fromWorkout.date, { weekday: "short", day: "numeric", month: "short" })})</a></p>`
+      : from ? `<p style="margin:-8px 0 12px"><a href="#${backTo === "muscles" ? "muscles" : "progress"}" id="p-back" data-muscle-back="${from}">← Back to ${backTo === "muscles" ? `Muscles (${from})` : from}</a></p>` : ""}
     <p class="muted" style="margin-top:-8px">
       ${info.primary.length ? `Primary: ${info.primary.join(", ")}` : "No muscles mapped"}${info.secondary.length ? ` · Secondary: ${info.secondary.join(", ")}` : ""}
       ${unconfirmed ? ` · <span class="pill high">unit not confirmed</span>` : ""}
@@ -95,15 +108,17 @@ function renderExercise(el, model, ex, range) {
   }
 
   const first = ss[0], last = ss[ss.length - 1];
-  const maxBy = (list, f) => list.reduce((b, s) => (f(s) != null && (!b || f(s) > f(b)) ? s : b), null);
-  const bestE1 = maxBy(ss, (s) => s.bestE1rm);
-  const allTimeE1 = maxBy(ex.sessions, (s) => s.bestE1rm);
-  const bestW = ss.reduce((b, s) => (!b || s.topLoad > b.topLoad || (s.topLoad === b.topLoad && (s.topSet?.reps || 0) > (b.topSet?.reps || 0)) ? s : b), null);
-  const mostAdded = isBW ? maxBy(ss.flatMap((s) => s.sets), (x) => x.kg) : null;
-  const bestReps = maxBy(ss, (s) => s.maxReps);
   const vol = ss.reduce((t, s) => t + s.volume, 0);
   const prevVol = prevSS.reduce((t, s) => t + s.volume, 0);
-  const change = strength && ss.length > 1 && first.bestE1rm && last.bestE1rm ? (last.bestE1rm / first.bestE1rm - 1) * 100 : null;
+  // Between the first and last sessions with an e1RM: sessions without weight have none.
+  const withE1 = ss.filter((s) => s.bestE1rm), e1First = withE1[0], e1Last = withE1[withE1.length - 1];
+  const change = strength && withE1.length > 1 ? (e1Last.bestE1rm / e1First.bestE1rm - 1) * 100 : null;
+
+  // The per-workout chart, like Liftoff's: one metric at a time. Weight-based metrics leave out
+  // sessions with no weight (e.g. added weight the export dropped) instead of plotting zero.
+  const metrics = exerciseMetrics(ex, strength, isBW);
+  const metric = metrics.find((m) => m.id === LI.state.progressMetric?.[strength ? "loaded" : "reps"]) || metrics[0];
+  const skipped = metric.weight ? ss.filter((s) => !metric.get(s)) : [];
 
   const tile = (label, value, sub) => `<div class="card tile"><div class="label">${label}</div><div class="value">${value}</div><div class="sub">${sub || "&nbsp;"}</div></div>`;
   const buckets = LI.buckets(range);
@@ -112,17 +127,18 @@ function renderExercise(el, model, ex, range) {
   el.innerHTML = `${header}
     <div class="tiles">
       ${tile("Sessions", ss.length, prevSS.length ? `${prevSS.length} in the ${range.short} before` : `${LI.fmtShort(first.date)} – ${LI.fmtShort(last.date)}`)}
-      ${strength && bestE1 ? tile(isBW ? "Best e1RM (incl. BW)" : "Best e1RM", LI.fmtWU(bestE1.bestE1rm), allTimeE1 !== bestE1 ? `all-time ${LI.fmtWU(allTimeE1.bestE1rm)}` : `${LI.fmtShort(bestE1.date)} · all-time best`) : ""}
-      ${isBW ? tile("Most added weight", mostAdded && mostAdded.kg > 0 ? `+${LI.fmtWU(mostAdded.kg)}` : "None", mostAdded && mostAdded.kg > 0 ? `× ${mostAdded.reps} · ${LI.fmtShort(mostAdded.workout.date)}` : "bodyweight only")
-        : strength ? tile("Heaviest set", LI.fmtWU(bestW.topLoad), `× ${bestW.topSet.reps} · ${LI.fmtShort(bestW.date)}`) : ""}
-      ${tile("Most reps in a set", bestReps.maxReps, LI.fmtShort(bestReps.date))}
       ${tile(`Volume (${u})`, LI.fmtVol(vol), prevSS.length ? LI.fmtChange(vol, prevVol, `previous ${range.short}`) : `${LI.fmtVol(vol / ss.length)} per session`)}
-      ${change != null ? tile("e1RM change", `${change >= 0 ? "+" : ""}${LI.fmtNum(change, 0)}%`, `${LI.fmtShort(first.date)} → ${LI.fmtShort(last.date)}`) : ""}
+      ${change != null ? tile("e1RM change", `${change >= 0 ? "+" : ""}${LI.fmtNum(change, 0)}%`, `${LI.fmtShort(e1First.date)} → ${LI.fmtShort(e1Last.date)}`) : ""}
     </div>
     <div class="grid cols-2" style="margin-top:16px">
-      <div class="card"><div class="card-head"><h2>${strength ? "Strength" : ex.kind === "cardio" ? "Distance" : "Reps"}</h2><span class="muted small">${strength ? `${u}, per session${isBW ? ", incl. bodyweight" : ""}` : "per session"}</span></div><div class="chart-box tall"><canvas id="c-main"></canvas></div></div>
+      <div class="card"><div class="card-head"><h2>${ex.kind === "cardio" ? "Distance" : metric.title}</h2><span class="muted small">${ex.kind === "cardio" ? "per session" : metric.sub}</span></div>
+        ${metrics.length > 1 ? `<div class="metric-chips" role="group" aria-label="Chart">${metrics.map((m) => `<button class="btn small ${m === metric ? "on" : ""}" data-metric="${m.id}" aria-pressed="${m === metric}">${m.label}</button>`).join("")}</div>` : ""}
+        <div class="chart-box tall"><canvas id="c-main"></canvas></div>
+        ${skipped.length ? `<p class="muted small" style="margin:6px 0 0">${skipped.length} session${skipped.length === 1 ? "" : "s"} without weight ${skipped.length === 1 ? "isn't" : "aren't"} shown. <a href="#workouts" id="p-skipped">Add it on Workouts</a></p>` : ""}
+      </div>
       <div class="card"><div class="card-head"><h2>${ex.kind === "cardio" ? "Time" : `${per} ${strength ? "volume" : "reps"}`}</h2><span class="muted small">${ex.kind === "cardio" ? "minutes per session" : strength ? `${u} × reps` : "total reps"}</span></div><div class="chart-box tall"><canvas id="c-vol"></canvas></div></div>
     </div>
+    ${ex.kind === "cardio" ? "" : recordsCard(ex, range, strength, isBW)}
     <div class="grid cols-2" style="margin-top:16px">
       <div class="card"><h2>Rep records</h2><p class="muted small">All time: most reps you've done at each weight.</p><div class="table-wrap">${repRecords(ex)}</div></div>
       <div class="card"><h2>History</h2><p class="muted small">${range.label}</p><div class="table-wrap">${historyTable(ss)}</div></div>
@@ -132,19 +148,18 @@ function renderExercise(el, model, ex, range) {
   bindCapped(el);
   const main = el.querySelector("#c-main"), volC = el.querySelector("#c-vol");
   const fmtU = (v) => `${LI.fmtNum(v)} ${u}`;
-  if (strength) {
-    LI.lineChart(main, [
-      { label: isBW ? "Estimated 1RM (BW + added)" : "Estimated 1RM", points: ss.filter((s) => s.bestE1rm).map((s) => ({ x: s.date, y: LI.toDisplay(s.bestE1rm) })) },
-      { label: isBW ? "Top set (BW + added)" : "Top set", points: ss.map((s) => ({ x: s.date, y: LI.toDisplay(s.topLoad) })) },
-    ], { ...xRange, fmt: fmtU });
-  } else if (ex.kind === "cardio") {
+  if (ex.kind === "cardio") {
     LI.lineChart(main, [{ label: "Distance", points: ss.map((s) => ({ x: s.date, y: s.distance })) }], xRange);
   } else {
-    LI.lineChart(main, [
-      { label: "Best set", points: ss.map((s) => ({ x: s.date, y: s.maxReps })) },
-      { label: "Total reps", points: ss.map((s) => ({ x: s.date, y: s.totalReps })) },
-    ], xRange);
+    LI.lineChart(main, [{ label: metric.label, points: ss.filter((s) => metric.get(s)).map((s) => ({ x: s.date, y: metric.weight ? LI.toDisplay(metric.get(s)) : metric.get(s) })) }],
+      { ...xRange, fmt: metric.weight ? fmtU : (v) => LI.fmtNum(v, 0) });
   }
+  el.querySelectorAll("[data-metric]").forEach((b) => (b.onclick = () => {
+    LI.state.progressMetric = { ...LI.state.progressMetric, [strength ? "loaded" : "reps"]: b.dataset.metric };
+    LI.render();
+  }));
+  const skippedLink = el.querySelector("#p-skipped");
+  if (skippedLink) skippedLink.onclick = () => { LI.state.workoutId = skipped[skipped.length - 1].workout.id; };
 
   const exSets = ex.sessions.flatMap((s) => s.sets);
   if (ex.kind === "cardio") {
@@ -154,6 +169,44 @@ function renderExercise(el, model, ex, range) {
   } else {
     LI.barChart(volC, LI.bucketStyle(buckets).labels, [{ label: "Reps", values: LI.bucketSum(buckets, exSets, range, (s) => s.reps), color: LI.bucketStyle(buckets).color }]);
   }
+}
+
+function exerciseMetrics(ex, strength, isBW) {
+  const u = LI.state.displayUnit, bw = isBW ? " (incl. bodyweight)" : "";
+  const all = [
+    { id: "e1rm", label: "Estimated 1RM", title: "Estimated 1RM", sub: `${u}, best set per workout${bw}`, weight: true, get: (s) => s.bestE1rm },
+    { id: "weight", label: "Best set weight", title: "Best set weight", sub: `${u}, heaviest set per workout${bw}`, weight: true, get: (s) => s.topLoad },
+    { id: "reps", label: "Best set reps", title: "Best set reps", sub: "most reps in one set per workout", get: (s) => s.maxReps },
+    { id: "volume", label: "Volume per workout", title: "Volume per workout", sub: `${u} × reps${bw}`, weight: true, get: (s) => s.volume },
+    { id: "totalReps", label: "Reps per workout", title: "Reps per workout", sub: "all sets added up", get: (s) => s.totalReps },
+  ];
+  return strength ? all : all.filter((m) => !m.weight);
+}
+
+// All-time records, as Liftoff lists them, plus e1RM and heaviest set for loaded exercises.
+// ★ marks a record set inside the selected period.
+function recordsCard(ex, range, strength, isBW) {
+  const sets = ex.sessions.flatMap((s) => s.sets.filter((x) => x.reps > 0));
+  const best = (list, f) => list.reduce((b, x) => (f(x) > 0 && (!b || f(x) > f(b)) ? x : b), null);
+  const set = (x) => x && x.workout.date, sess = (x) => x && x.date;
+  const load = (x) => LI.weightLabel(x);
+  const rows = [
+    strength && ["Best e1RM", best(sets, (x) => x.e1rm || 0), (x) => LI.fmtWU(x.e1rm), (x) => `${load(x)} × ${x.reps}`, set],
+    strength && ["Heaviest set", best(sets, (x) => x.load * 1000 + x.reps), (x) => (isBW ? LI.fmtWU(x.load) : LI.fmtWU(x.kg)), (x) => `${load(x)} × ${x.reps}`, set],
+    ["Max set reps", best(sets, (x) => x.reps * 1e6 + x.load), (x) => x.reps, (x) => (x.load > 0 ? `at ${load(x)}` : ""), set],
+    ["Max workout reps", best(ex.sessions, (s) => s.totalReps), (s) => s.totalReps, (s) => `${s.sets.length} sets`, sess],
+    strength && ["Max set volume", best(sets, (x) => x.volume), (x) => `${LI.fmtVol(x.volume)} ${LI.state.displayUnit}`, (x) => `${load(x)} × ${x.reps}`, set],
+    strength && ["Max workout volume", best(ex.sessions, (s) => s.volume), (s) => `${LI.fmtVol(s.volume)} ${LI.state.displayUnit}`, (s) => `${s.sets.length} sets`, sess],
+  ].filter((r) => r && r[1]);
+  return `<div class="card" style="margin-top:16px">
+    <div class="card-head"><h2>Personal records</h2><span class="muted small">all time${range.key === "all" ? "" : ` · ★ = set in the ${range.label.toLowerCase()}`}</span></div>
+    <div class="records">${rows.map(([label, x, value, detail, when]) => `<div class="record">
+      <div class="label">${label}${LI.inRange(when(x), range) && range.key !== "all" ? ` <span class="pr">★</span>` : ""}</div>
+      <div class="value">${value(x)}</div>
+      <div class="sub">${[detail(x), LI.fmtShort(when(x))].filter(Boolean).join(" · ")}</div>
+    </div>`).join("")}</div>
+    ${isBW ? `<p class="muted small" style="margin:8px 0 0">Volume and e1RM include your bodyweight.</p>` : ""}
+  </div>`;
 }
 
 function repRecords(ex) {

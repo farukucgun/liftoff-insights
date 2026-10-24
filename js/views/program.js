@@ -79,6 +79,14 @@ LI.views.program = (el, model) => {
     LI.render();
   };
   el.querySelectorAll("[data-day]").forEach((b) => (b.onclick = () => { st.programDay = b.dataset.day; LI.render(); }));
+  // Into Progress, with a way back here.
+  const toProgress = (e, fields) => {
+    e.preventDefault();
+    Object.assign(st, { progressFromMuscle: null, progressFromWorkout: null, progressBackTo: "program", ...fields });
+    location.hash = "progress";
+  };
+  el.querySelectorAll("[data-progress-ex]").forEach((a) => (a.onclick = (e) => toProgress(e, { progressMode: "exercise", progressExercise: a.dataset.progressEx })));
+  el.querySelectorAll("[data-progress-muscle]").forEach((a) => (a.onclick = (e) => toProgress(e, { progressMode: "muscle", progressMuscle: a.dataset.progressMuscle })));
   el.querySelectorAll("[data-mfilter]").forEach((b) => (b.onclick = () => { st.programMuscleFilter = b.dataset.mfilter; LI.render(); }));
   el.querySelector("#p-apply").onclick = () => {
     st.muscleTargets = LI.programTargets();
@@ -93,6 +101,8 @@ const fmtSet = (x) => {
   return `${isBW ? (x.kg > 0 ? `+${LI.fmtW(x.kg)}` : "BW") : LI.fmtW(x.kg)}×${x.reps}`;
 };
 
+const muscleLink = (m) => `<a href="#progress" class="ex-link" data-progress-muscle="${m}" title="Progress for ${m}">${m}</a>`;
+
 const ADVICE_LABEL = { ok: "Add weight", under: "Lighten", high: "Re-set", info: "Build reps" };
 
 function slotData(model, s, day) {
@@ -106,12 +116,20 @@ function slotData(model, s, day) {
   };
 }
 
+// The exercise's name, linking to its Progress page when it's in your log: the program's own
+// name, or else whatever "Last time" matched (a substitute or a differently named variant).
+function slotName(model, s, last) {
+  const logged = model.exercises.has(s.ex) ? s.ex : last?.exercise;
+  if (!logged) return LI.esc(s.ex);
+  return `<a href="#progress" class="ex-link" data-progress-ex="${LI.esc(logged)}" title="Progress for ${LI.esc(logged)}">${LI.esc(s.ex)}</a>`;
+}
+
 // Phone layout: one tile per exercise, what to do this time most prominent.
 function slotCard(model, s, day) {
   const { last, advice, ws, alts, lastNote } = slotData(model, s, day);
   return `<div class="pc">
     <div class="pc-head">
-      <div><div class="pc-name">${LI.esc(s.ex)}</div>${s.tech ? `<div class="small p-tech">${LI.esc(s.tech)}</div>` : ""}</div>
+      <div><div class="pc-name">${slotName(model, s, last)}</div>${s.tech ? `<div class="small p-tech">${LI.esc(s.tech)}</div>` : ""}</div>
       <div class="pc-target num">${s.sets} × ${s.reps[0]}–${s.reps[1]}</div>
     </div>
     <div class="pc-meta">RPE ${s.rpe[0]} → ${s.rpe[1]} · Rest ${s.rest} · ${s.warmup} warm-up</div>
@@ -126,7 +144,7 @@ function slotCard(model, s, day) {
 function slotRow(model, s, day) {
   const { last, advice, ws, alts, lastNote } = slotData(model, s, day);
   return `<tr>
-    <td><strong>${LI.esc(s.ex)}</strong>${s.tech ? `<div class="small p-tech">${LI.esc(s.tech)}</div>` : ""}
+    <td><strong>${slotName(model, s, last)}</strong>${s.tech ? `<div class="small p-tech">${LI.esc(s.tech)}</div>` : ""}
       <div class="muted small">Or: ${alts.map(LI.esc).join(", ")}</div></td>
     <td class="r num">${s.sets} × ${s.reps[0]}–${s.reps[1]}<div class="muted small">${s.warmup} warm-up</div></td>
     <td class="num">${s.rpe[0]} → ${s.rpe[1]}</td>
@@ -196,13 +214,13 @@ function musclesCard(model) {
         `<button class="btn small ${filter === c ? "on" : ""}" data-mfilter="${c}" ${n || c === "all" ? "" : "disabled"}>${l}<span class="count">${n}</span></button>`).join("")}
     </div>
     <div class="pm-list mob-only">${shown.map(({ m, v, cur, cls, label, gap }) => `<div class="pm">
-      <div class="pm-top"><strong>${m}</strong><span class="num">${LI.fmtNum(v)}<span class="muted"> of ${cur.lo}–${cur.hi}</span></span>
+      <div class="pm-top"><strong>${muscleLink(m)}</strong><span class="num">${LI.fmtNum(v)}<span class="muted"> of ${cur.lo}–${cur.hi}</span></span>
         <span class="num pm-gap ${gap < 0 ? "down" : ""}">${gap ? `${gap > 0 ? "+" : "−"}${LI.fmtNum(Math.abs(gap))}` : "✓"}</span><span class="pill ${cls}">${label}</span></div>
       <div class="muted small">Program ${LI.fmtNum(planned[m])} sets/week · suggested ${targets[m].lo}–${targets[m].hi}${LI.state.muscleTargets[m] ? "" : " · you use the default"}</div>
     </div>`).join("") || `<p class="muted">No muscles in this group.</p>`}</div>
     <div class="table-wrap desk-only"><table>
       <thead><tr><th>Muscle</th><th class="r">Program</th><th class="r">Suggested target</th><th class="r">Your current target</th><th class="r">Last 4 weeks</th><th class="r">To target</th></tr></thead>
-      <tbody>${shown.map(({ m, v, cur, cls, label, gap }) => `<tr><td>${m}</td><td class="r num">${LI.fmtNum(planned[m])}</td><td class="r num">${targets[m].lo}–${targets[m].hi}</td>
+      <tbody>${shown.map(({ m, v, cur, cls, label, gap }) => `<tr><td>${muscleLink(m)}</td><td class="r num">${LI.fmtNum(planned[m])}</td><td class="r num">${targets[m].lo}–${targets[m].hi}</td>
           <td class="r num">${cur.lo}–${cur.hi}${LI.state.muscleTargets[m] ? "" : ` <span class="muted small">default</span>`}</td>
           <td class="r num">${LI.fmtNum(v)} <span class="pill ${cls}">${label}</span></td>
           <td class="r num ${gap < 0 ? "down" : ""}">${gap ? `${gap > 0 ? "+" : "−"}${LI.fmtNum(Math.abs(gap))}` : "✓"}</td></tr>`).join("")

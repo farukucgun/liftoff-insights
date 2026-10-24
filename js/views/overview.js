@@ -40,7 +40,7 @@ LI.views.overview = (el, model) => {
   const gymNow = LI.gymNow();
   el.innerHTML = `
     <div class="ov-top ${gymNow ? "with-gym" : ""}">
-    ${gymNow ? `<a class="card gym-card" href="#gym" aria-label="Gym: ${gymNow.count} people now. Open the Gym page">
+    ${gymNow ? `<a class="card gym-card" href="#gym" aria-label="Gym: about ${gymNow.adj} people in the gym, ${gymNow.count} checked in. Open the Gym page">
       <div class="card-head"><h2>Gym now</h2><span class="muted small">More →</span></div>
       ${gymCardBody(gymNow)}
     </a>` : ""}
@@ -79,6 +79,7 @@ LI.views.overview = (el, model) => {
     c.options.scales.y.ticks.maxTicksLimit = 3;
     c.options.scales.x.ticks.maxTicksLimit = 5;
     c.update();
+    el.querySelector(".gym-keys").innerHTML = LI.gymKey({ usual: c.$usual });
   }
   el.querySelector("#o-period").onchange = (e) => LI.setPeriod("overview", e.target.value);
   if (!ws.length) return;
@@ -110,7 +111,7 @@ LI.views.overview = (el, model) => {
 function gymCardBody(now) {
   return `${LI.gymCountRow(now)}
     <div class="gym-spark"><canvas id="o-gym"></canvas></div>
-    <div class="gym-foot muted small">${LI.gymKey()}<span class="gym-upd">${LI.gymUpdated(now)}</span></div>`;
+    <div class="gym-foot muted small"><span class="gym-keys"></span><span class="gym-upd">${LI.gymUpdated(now)}</span></div>`;
 }
 
 // Four weeks as a normal calendar: a row per week (newest at the bottom), Monday to Sunday
@@ -139,7 +140,9 @@ function renderCalendar(el, model) {
       const v = byDay.get(LI.dayKey(d)) || 0;
       const t = v / max, strong = t > 0 && Math.min(5, 1 + Math.floor(t * 4.999)) >= 4;
       const title = `${LI.fmtDate(d, { weekday: "short", day: "numeric", month: "short" })}${v ? ` · ${LI.fmtVol(v)} ${LI.state.displayUnit}` : " · rest"}`;
-      html += `<div class="cal-cell ${v ? "on" : ""} ${strong ? "strong" : ""} ${+d === +today ? "today" : ""}" style="background:${LI.seqColor(t)}" title="${title}">${d.getDate() === 1 ? `${d.getDate()} ${month(d)}` : d.getDate()}</div>`;
+      // Training days open that workout on the Workouts tab.
+      const tag = v ? "button" : "div";
+      html += `<${tag} class="cal-cell ${v ? "on" : ""} ${strong ? "strong" : ""} ${+d === +today ? "today" : ""}" ${v ? `data-day="${LI.dayKey(d)}" aria-label="Open the workout on ${title}"` : ""} style="background:${LI.seqColor(t)}" title="${title}">${d.getDate() === 1 ? `${d.getDate()} ${month(d)}` : d.getDate()}</${tag}>`;
     }
   });
   el.innerHTML = `<div class="cal-nav">
@@ -155,5 +158,10 @@ function renderCalendar(el, model) {
     const step = +b.dataset.cal;
     LI.state.calPage = step ? page + step : 0;
     renderCalendar(el, model);
+  }));
+  el.querySelectorAll("[data-day]").forEach((b) => (b.onclick = () => {
+    // Two workouts on one day: the later one.
+    LI.state.workoutId = model.workouts.filter((w) => w.day === b.dataset.day).pop().id;
+    location.hash = "workouts";
   }));
 }

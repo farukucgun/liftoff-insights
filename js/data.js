@@ -371,6 +371,21 @@ LI.buildModel = (rows) => {
     LI.state.unitSeen = seen;
     LI.store.set("li.unitSeen", seen);
   }
+  // Sessions read as lb (the exercise's default) whose weights all have kg float noise: typically
+  // the unit was switched to kg in Liftoff for that exercise. Only this direction: clean numbers
+  // also come from exercises really logged in kg. A per-session choice or "it's lb" silences it.
+  const unitHints = [];
+  for (const ex of exercises.values()) {
+    const entry = LI.unitConfig()[ex.name];
+    if (!entry) continue;
+    for (const s of ex.sessions) {
+      const day = s.workout.day, k = `${ex.name}|${day}`;
+      if ((typeof entry === "object" && entry.sessions && entry.sessions[day]) || LI.state.unitHintOk[k]) continue;
+      const sets = s.sets.filter((x) => x.rawWeight > 0 && !x.edited);
+      if (sets.length && sets[0].rawUnit === "lb" && sets.every((x) => x.noisy)) unitHints.push({ key: k, exercise: ex.name, day, sets });
+    }
+  }
+
   const fixMissing = Object.keys(LI.state.corrections).filter((k) => !fixSeen.has(k)).map((key) => ({ key, kind: "missing", fix: LI.state.corrections[key] }));
 
   return {
@@ -381,6 +396,7 @@ LI.buildModel = (rows) => {
     unconfirmed: [...unconfirmed],
     fixIssues: [...fixMissing, ...fixChanged],
     unitIssues,
+    unitHints,
     first: real[0]?.date,
     last: real[real.length - 1]?.date,
   };
